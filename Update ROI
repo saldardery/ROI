@@ -1,0 +1,154 @@
+import pandas as pd
+from forex_python.converter import CurrencyRates
+from datetime import datetime , timedelta
+from dateutil.relativedelta import relativedelta
+from forex_python.converter import CurrencyRates
+
+################################################################
+# Read both migration jira dump excel and Mapped customer excel
+
+Salesforce = 'C:\\Users\\IncortaBI\\Box\\Incorta Backend\\ROI\\Salesforce_dump.csv'
+ROI_SIMPLE_VIEW='C:\\Users\\IncortaBI\\Box\\Incorta Backend\\ROI\\ROI_Simple_View.xlsx'
+
+Salesforce = pd.read_csv(Salesforce)
+ROI_SIMPLE_VIEW = pd.read_excel(ROI_SIMPLE_VIEW)
+
+################################################################
+columns = ['Data Source','Alias Name','Status', 'Account Name', 'Activated Date', 'Total Agreement Value','Currency','In USD', 'Related Opportunity','Category','Geo','PSO Practice','Agreement:Created Date', 'Agreement:Agreement Name','Jira Name']
+ROI_DETAILED_VIEW = pd.DataFrame(columns=columns)
+
+
+################################################################
+
+z=0
+match_count=0
+
+################################################################
+
+
+for iterrate_all_mapped_excel_rows in ROI_SIMPLE_VIEW.iterrows():
+    i=0
+    ROI=0
+    VCF_ROI=0
+    NSX_ROI=0
+    Other_ROI=0
+    currency="USD"
+    for iterrate_all_salesforce_rows in Salesforce.iterrows():
+
+        Mapped_Customer_Name=str(ROI_SIMPLE_VIEW.loc[z,'Sales Force Name']).lower()
+        Salesforce_Customer_Name=str(Salesforce.loc[i,'Account Name']).lower()
+        if((Mapped_Customer_Name in Salesforce_Customer_Name) and (Salesforce.loc[i,"Status"] in ("Activated","Fully Signed","Being Activated","Sent for VMware Countersignature","Signed by Customer","VMware Countersignature Requested"))and (Salesforce.loc[i,"PSO Practice"]!="Great Atlantic Migration") and (Salesforce.loc[i,"Total Agreement Value"] not in (0,1))): # if condition mapped customer= salesforce_customer AND status is what we want AND Agreement: created date >= mapped excel First date AND PSO PRACTISE NOT EQUAL "Great Atlantic Migration"
+
+            try:
+
+                Map_Date=ROI_SIMPLE_VIEW.loc[z,"First Closed Date"] # getting value of first closed date that we got from previous python and was placed in 3rd column in mapped excel
+                Map_Date=datetime.strptime(Map_Date, "%d-%m-%y") # make python understand that this is a time with current format d-m-yy
+                New_map_date = Map_Date - relativedelta(days=400) # deducting a year from what is there in the mapped excel
+                New_map_date= New_map_date.strftime("%Y/%m/%d") # changing the format to y/m/d so i can compare between two dates
+                Salesforce_deal_date=Salesforce.loc[i,"Activated Date"] #getting the deal date from salesforce 25k sheet
+                Salesforce_deal_date = datetime.strptime(Salesforce_deal_date, "%m/%d/%Y")
+                Salesforce_deal_date = Salesforce_deal_date.strftime("%Y/%m/%d") # changing the format to y/m/d so i can compare between two dates
+                if(Salesforce_deal_date>=New_map_date):
+
+
+                    if(Salesforce.loc[i,"Total Agreement Value Currency"]=="USD"):
+                        DEAL= Salesforce.loc[i,"Total Agreement Value"]
+                        ROI=ROI+DEAL
+                        if('vcf' in str(Salesforce.loc[i,'Related Opportunity']).lower()):
+                            VCF_ROI=VCF_ROI+DEAL
+                            ROI_DETAILED_VIEW.loc[match_count, 'Category'] = "VCF"
+
+                        elif ('nsx' in str(Salesforce.loc[i, 'Related Opportunity']).lower()):
+                            NSX_ROI = NSX_ROI + DEAL
+                            ROI_DETAILED_VIEW.loc[match_count, 'Category'] = "NSX"
+
+                        else :
+                            Other_ROI=Other_ROI+DEAL
+                            ROI_DETAILED_VIEW.loc[match_count, 'Category'] = "Other"
+
+                        ROI_DETAILED_VIEW.loc[match_count, 'Data Source'] = 'SFDC'
+                        ROI_DETAILED_VIEW.loc[match_count, 'In USD'] = round(DEAL)
+                        ROI_DETAILED_VIEW.loc[match_count,'Status']=Salesforce.loc[i,"Status"]
+                        ROI_DETAILED_VIEW.loc[match_count, 'Alias Name'] = ROI_SIMPLE_VIEW.loc[z, "Alias Name"]
+                        ROI_DETAILED_VIEW.loc[match_count, 'Account Name'] = Salesforce.loc[i, "Account Name"]
+                        ROI_DETAILED_VIEW.loc[match_count, 'Activated Date'] = Salesforce.loc[i, "Activated Date"]
+                        ROI_DETAILED_VIEW.loc[match_count, 'Total Agreement Value'] = Salesforce.loc[i, "Total Agreement Value"]
+                        ROI_DETAILED_VIEW.loc[match_count, 'Currency'] = Salesforce.loc[i, "Total Agreement Value Currency"]
+                        ROI_DETAILED_VIEW.loc[match_count, 'Related Opportunity'] = Salesforce.loc[i, "Related Opportunity"]
+                        ROI_DETAILED_VIEW.loc[match_count, 'Geo'] = Salesforce.loc[i, "Geo"]
+                        ROI_DETAILED_VIEW.loc[match_count, 'PSO Practice'] = Salesforce.loc[i, "PSO Practice"]
+                        ROI_DETAILED_VIEW.loc[match_count, 'Agreement:Created Date'] = Salesforce.loc[i, "Agreement: Created Date"]
+                        ROI_DETAILED_VIEW.loc[match_count, 'Agreement:Agreement Name'] = Salesforce.loc[i, "Agreement: Agreement Name"]
+                        ROI_DETAILED_VIEW.loc[match_count, 'Jira Name'] = ROI_SIMPLE_VIEW.loc[z, "Migration Customer Name"]
+                        match_count = match_count + 1 #WILL BE USED FOR DETAILED ROI
+
+
+                    elif( (Salesforce.loc[i,"Total Agreement Value Currency"]!="USD") and (len(Salesforce.loc[i,"Total Agreement Value Currency"])>0)):
+
+
+
+                        if(Salesforce.loc[i,"Total Agreement Value Currency"]=="EUR"):
+                            currency=Salesforce.loc[i,"Total Agreement Value Currency"] #can be deleted later
+                            exchange_rate = 1.08
+                            DEAL = (Salesforce.loc[i, "Total Agreement Value"]) * exchange_rate
+                        if (Salesforce.loc[i, "Total Agreement Value Currency"] == "GBP"):
+                            currency = Salesforce.loc[i, "Total Agreement Value Currency"]  # can be deleted later
+                            exchange_rate = 1.27
+                            DEAL = (Salesforce.loc[i, "Total Agreement Value"]) * exchange_rate
+                        if (Salesforce.loc[i, "Total Agreement Value Currency"] == "AUD"):
+                            currency = Salesforce.loc[i, "Total Agreement Value Currency"]  # can be deleted later
+                            exchange_rate = 0.66
+                            DEAL = (Salesforce.loc[i, "Total Agreement Value"]) * exchange_rate
+                        if (Salesforce.loc[i, "Total Agreement Value Currency"] == "JPY"):
+                            currency = Salesforce.loc[i, "Total Agreement Value Currency"]  # can be deleted later
+                            exchange_rate = 0.0066
+                            DEAL = (Salesforce.loc[i, "Total Agreement Value"]) * exchange_rate
+
+                        ROI = ROI + DEAL
+                        if ('vcf' in str(Salesforce.loc[i, 'Related Opportunity']).lower()):
+                            VCF_ROI = VCF_ROI + DEAL
+                            ROI_DETAILED_VIEW.loc[match_count, 'Category'] = "VCF"
+
+                        elif ('nsx' in str(Salesforce.loc[i, 'Related Opportunity']).lower()):
+                            NSX_ROI = NSX_ROI + DEAL
+                            ROI_DETAILED_VIEW.loc[match_count, 'Category'] = "NSX"
+
+                        else:
+                            Other_ROI = Other_ROI + DEAL
+                            ROI_DETAILED_VIEW.loc[match_count, 'Category'] = "Other"
+
+                        ROI_DETAILED_VIEW.loc[match_count, 'Data Source'] = 'SFDC'
+                        ROI_DETAILED_VIEW.loc[match_count, 'In USD'] = round(DEAL)
+                        ROI_DETAILED_VIEW.loc[match_count,'Status']=Salesforce.loc[i,"Status"]
+                        ROI_DETAILED_VIEW.loc[match_count, 'Account Name'] = Salesforce.loc[i, "Account Name"]
+                        ROI_DETAILED_VIEW.loc[match_count, 'Alias Name'] = ROI_SIMPLE_VIEW.loc[z, "Alias Name"]
+                        ROI_DETAILED_VIEW.loc[match_count, 'Activated Date'] = Salesforce.loc[i, "Activated Date"]
+                        ROI_DETAILED_VIEW.loc[match_count, 'Total Agreement Value'] = Salesforce.loc[i, "Total Agreement Value"]
+                        ROI_DETAILED_VIEW.loc[match_count, 'Currency'] = Salesforce.loc[i, "Total Agreement Value Currency"]
+                        ROI_DETAILED_VIEW.loc[match_count, 'Related Opportunity'] = Salesforce.loc[i, "Related Opportunity"]
+                        ROI_DETAILED_VIEW.loc[match_count, 'Geo'] = Salesforce.loc[i, "Geo"]
+                        ROI_DETAILED_VIEW.loc[match_count, 'PSO Practice'] = Salesforce.loc[i, "PSO Practice"]
+                        ROI_DETAILED_VIEW.loc[match_count, 'Agreement:Created Date'] = Salesforce.loc[i, "Agreement: Created Date"]
+                        ROI_DETAILED_VIEW.loc[match_count, 'Agreement:Agreement Name'] = Salesforce.loc[i, "Agreement: Agreement Name"]
+                        ROI_DETAILED_VIEW.loc[match_count, 'Jira Name'] = ROI_SIMPLE_VIEW.loc[z, "Migration Customer Name"]
+                        match_count = match_count + 1
+
+            except:
+                do_nothing=1
+
+        i=i+1
+
+    ROI_SIMPLE_VIEW.loc[z,'ROI']=round(ROI)
+    ROI_SIMPLE_VIEW.loc[z, "NSX"] = round(NSX_ROI)
+    ROI_SIMPLE_VIEW.loc[z, "VCF"] = round(VCF_ROI)
+    ROI_SIMPLE_VIEW.loc[z, "Other"] = round(Other_ROI)
+
+    print(ROI_SIMPLE_VIEW.loc[z, 'Sales Force Name']+ " ROI is " + str(ROI) + " Their local currency is " + currency)
+    z=z+1
+ROI_SIMPLE_VIEW.to_excel("C:\\Users\\IncortaBI\\Box\\Incorta Backend\\ROI\\ROI_Simple_View.xlsx", index=False)
+ROI_DETAILED_VIEW.to_excel("C:\\Users\\IncortaBI\\Box\\Incorta Backend\\ROI\\ROI_Detailed_View.xlsx", index=False)
+print(match_count)
+
+
+
+
